@@ -3,6 +3,7 @@ package lexers
 import (
 	"embed"
 	"io/fs"
+	"sync"
 
 	"github.com/alecthomas/chroma/v2"
 )
@@ -13,14 +14,29 @@ var embedded embed.FS
 // GlobalLexerRegistry is the global LexerRegistry of Lexers.
 var GlobalLexerRegistry = func() *chroma.LexerRegistry {
 	reg := chroma.NewLexerRegistry()
+	mutex := sync.Mutex{}
+	var wg sync.WaitGroup
+
 	// index(reg)
 	paths, err := fs.Glob(embedded, "embedded/*.xml")
 	if err != nil {
 		panic(err)
 	}
 	for _, path := range paths {
-		reg.Register(chroma.MustNewXMLLexer(embedded, path))
+		wg.Add(1)
+
+		go func(path string) {
+			defer wg.Done()
+			// FIXME: What happens if this call panics?
+			lexer := chroma.MustNewXMLLexer(embedded, path)
+
+			mutex.Lock()
+			defer mutex.Unlock()
+			reg.Register(lexer)
+		}(path)
 	}
+
+	wg.Wait()
 	return reg
 }()
 
